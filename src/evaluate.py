@@ -32,12 +32,27 @@ def predict_logits(model, X, batch_size=64):
     next(model.parameters()).device, and bring the answers back with .cpu().
     Work in batches so that a large test set does not run you out of memory.
     """
-    raise NotImplementedError("Problem 3: fill in predict_logits")
+    device = next(model.parameters()).device
+    X_tensor = torch.as_tensor(X, dtype=torch.float32)
+    outputs = []
+
+    model.eval()
+    with torch.no_grad():
+        for start in range(0, len(X_tensor), batch_size):
+            batch = X_tensor[start:start + batch_size].to(device)
+            logits = model(batch)
+            outputs.append(logits.detach().cpu().numpy().astype(np.float32, copy=False))
+
+    if not outputs:
+        return np.empty((0, 0), dtype=np.float32)
+    return np.concatenate(outputs, axis=0)
 
 
 def accuracy(model, X, y):
     """Return the share of rows the model gets right, as a float 0.0 to 1.0."""
-    raise NotImplementedError("Problem 3: fill in accuracy")
+    logits = predict_logits(model, X)
+    predictions = logits.argmax(axis=1)
+    return float(np.mean(predictions == y))
 
 
 def confusion_matrix(model, X, y, num_classes):
@@ -47,7 +62,12 @@ def confusion_matrix(model, X, y, num_classes):
     how many images of class i the model called class j. The diagonal is the
     ones it got right.
     """
-    raise NotImplementedError("Problem 3: fill in confusion_matrix")
+    logits = predict_logits(model, X)
+    predictions = logits.argmax(axis=1)
+    matrix = np.zeros((num_classes, num_classes), dtype=np.int64)
+    for true, predicted in zip(y, predictions):
+        matrix[int(true), int(predicted)] += 1
+    return matrix
 
 
 def worst_examples(model, X, y, paths, k=10):
@@ -66,7 +86,29 @@ def worst_examples(model, X, y, paths, k=10):
     These are the images to put in your report. A mistake the model was sure
     about tells you much more than a mistake it was unsure about.
     """
-    raise NotImplementedError("Problem 5: fill in worst_examples")
+    if len(X) == 0:
+        return []
+
+    logits = predict_logits(model, X)
+    logits_tensor = torch.as_tensor(logits, dtype=torch.float32)
+    probs = torch.softmax(logits_tensor, dim=1).numpy()
+
+    predictions = probs.argmax(axis=1)
+    confidences = probs.max(axis=1)
+
+    mistakes = []
+    for idx, (true_label, pred_label, conf, path) in enumerate(zip(y, predictions, confidences, paths)):
+        if true_label != pred_label:
+            mistakes.append({
+                "path": Path(path),
+                "true": int(true_label),
+                "predicted": int(pred_label),
+                "confidence": float(conf)
+            })
+
+    # 가장 자신있게 틀린 순서(confidence 내림차순)로 정렬 후 상위 k개 반환
+    mistakes.sort(key=lambda item: item["confidence"], reverse=True)
+    return mistakes[:k]
 
 
 # ---------------------------------------------------------------------------
